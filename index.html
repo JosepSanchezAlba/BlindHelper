@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>YOLOv8s OpenImages - Cámara</title>
+  <title>YOLOv8 OpenImages</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <style>
@@ -18,7 +18,7 @@
   <button onclick="startCamera()">Iniciar</button>
   <br>
   <canvas id="canvas" width="640" height="480"></canvas>
-  <p id="status">Esperando modelo...</p>
+  <p id="status">Cargando modelo...</p>
 
   <script>
     const canvas = document.getElementById('canvas');
@@ -31,11 +31,17 @@
     document.body.appendChild(video);
 
     let session;
-    let classNames = []; // se cargará aparte
+    let classLabels = [];
 
     async function loadModel() {
       session = await ort.InferenceSession.create("yolov8s-oiv7.onnx");
       document.getElementById('status').innerText = "Modelo cargado. Selecciona cámara.";
+    }
+
+    async function loadClassNames() {
+      const response = await fetch('classes.txt');
+      const text = await response.text();
+      classLabels = text.split('\n').map(line => line.trim());
     }
 
     async function getCameras() {
@@ -89,12 +95,13 @@
 
       boxes.forEach(([x1, y1, x2, y2, score, classId]) => {
         if (score < 0.5) return;
+        const label = classLabels[classId] || `class_${classId}`;
         ctx.strokeStyle = "red";
         ctx.lineWidth = 2;
         ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
         ctx.fillStyle = "red";
         ctx.font = "14px Arial";
-        ctx.fillText(`${classNames[classId]} ${(score * 100).toFixed(1)}%`, x1 + 2, y1 + 14);
+        ctx.fillText(`${label} ${(score * 100).toFixed(1)}%`, x1 + 2, y1 + 14);
       });
     }
 
@@ -114,14 +121,10 @@
       requestAnimationFrame(detectLoop);
     }
 
-    async function loadClassNames() {
-      const res = await fetch("classes.txt");
-      classNames = (await res.text()).split("\n").map(l => l.trim()).filter(Boolean);
-    }
-
+    // Inicialización
     loadModel();
-    getCameras();
     loadClassNames();
+    getCameras();
   </script>
 </body>
 </html>

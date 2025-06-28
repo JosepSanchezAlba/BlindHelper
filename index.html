@@ -2,131 +2,153 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>YOLOv8 OpenImages - Depuración</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <title>YOLOv8 OpenImages (Depuración)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { text-align: center; font-family: sans-serif; }
-    canvas { border: 2px solid black; width: 90vw; max-width: 480px; height: auto; aspect-ratio: 4/3; }
-    #video { display: none; }
-    select, button { margin: 10px; font-size: 16px; padding: 5px; }
+    body { font-family: sans-serif; text-align: center; }
+    canvas { border: 2px solid black; }
+    #videoCanvas { max-width: 100%; height: auto; }
+    select, button { font-size: 1rem; margin: 10px; }
   </style>
 </head>
 <body>
-  <h2>YOLOv8 OpenImages (Depuración)</h2>
-  <select id="cameraSelect"></select>
-  <button onclick="startCamera()">Iniciar</button>
-  <br>
+  <h1>YOLOv8 OpenImages (Depuración)</h1>
+  <div>
+    <select id="cameraSelect"></select>
+    <button onclick="startCamera()">Iniciar</button>
+  </div>
   <canvas id="canvas" width="640" height="480"></canvas>
   <p id="status">Cargando modelo...</p>
 
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+
   <script>
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const video = document.createElement('video');
-    video.setAttribute('playsinline', '');
-    video.setAttribute('autoplay', '');
-    video.setAttribute('muted', '');
-    video.style.display = 'none';
-    document.body.appendChild(video);
+    let session, classLabels = [], videoStream;
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const status = document.getElementById("status");
 
-    let session;
-    let classLabels = [];
+    const video = document.createElement("video");
+    video.setAttribute("autoplay", true);
+    video.setAttribute("playsinline", true);
+    video.width = 640;
+    video.height = 480;
 
+    // ✅ Cargar clases desde archivo
+    async function loadClassLabels() {
+      const res = await fetch("classes.txt");
+      const txt = await res.text();
+      classLabels = txt.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+      console.log("Clases cargadas:", classLabels.length, classLabels.slice(0, 10));
+    }
+
+    // ✅ Cargar modelo
     async function loadModel() {
       session = await ort.InferenceSession.create("yolov8s-oiv7.onnx");
-      document.getElementById('status').innerText = "Modelo cargado. Selecciona cámara.";
+      status.textContent = "Modelo cargado. Selecciona cámara.";
     }
 
-    async function loadClassNames() {
-      const response = await fetch('classes.txt');
-      const text = await response.text();
-      classLabels = text.split('\n').map(line => line.trim());
-      console.log("✅ Clases cargadas:", classLabels.length, classLabels.slice(0, 10));
-    }
-
-    async function getCameras() {
+    // ✅ Listar cámaras disponibles
+    async function listCameras() {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter(d => d.kind === 'videoinput');
-      const select = document.getElementById('cameraSelect');
-      select.innerHTML = "";
-      cams.forEach((cam, i) => {
-        const opt = document.createElement('option');
-        opt.value = cam.deviceId;
-        opt.text = cam.label || `Cámara ${i + 1}`;
-        select.appendChild(opt);
+      const cameras = devices.filter(device => device.kind === "videoinput");
+      const select = document.getElementById("cameraSelect");
+      cameras.forEach(cam => {
+        const option = document.createElement("option");
+        option.value = cam.deviceId;
+        option.textContent = cam.label || `Camera ${select.length + 1}`;
+        select.appendChild(option);
       });
     }
 
+    // ✅ Iniciar cámara
     async function startCamera() {
-      const deviceId = document.getElementById('cameraSelect').value;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: deviceId } }, audio: false
+      const deviceId = document.getElementById("cameraSelect").value;
+      if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+
+      videoStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } }
       });
-      video.srcObject = stream;
-      await video.play();
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      detectLoop();
+      video.srcObject = videoStream;
+
+      video.onloadedmetadata = () => {
+        video.play();
+        detectLoop();
+      };
     }
 
-    function preprocess(video) {
-      const size = 640;
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = size;
-      tempCanvas.height = size;
-      const tempCtx = tempCanvas.getContext("2d");
-      tempCtx.drawImage(video, 0, 0, size, size);
-      const imgData = tempCtx.getImageData(0, 0, size, size);
-      const input = new Float32Array(size * size * 3);
-      for (let i = 0; i < size * size; i++) {
-        input[i] = imgData.data[i * 4] / 255;
-        input[i + size * size] = imgData.data[i * 4 + 1] / 255;
-        input[i + 2 * size * size] = imgData.data[i * 4 + 2] / 255;
+    // ✅ Preprocesado
+    function preprocessFrame() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = new Float32Array(canvas.width * canvas.height * 3);
+
+      for (let i = 0; i < canvas.width * canvas.height; i++) {
+        data[i] = imageData.data[i * 4] / 255;
+        data[i + canvas.width * canvas.height] = imageData.data[i * 4 + 1] / 255;
+        data[i + canvas.width * canvas.height * 2] = imageData.data[i * 4 + 2] / 255;
       }
-      return new ort.Tensor("float32", input, [1, 3, size, size]);
+
+      const inputTensor = new ort.Tensor("float32", data, [1, 3, canvas.height, canvas.width]);
+      return inputTensor;
     }
 
-    function drawBoxes(boxes) {
-      ctx.save();
-      ctx.scale(-1, 1);  // flip horizontal
-      ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-      ctx.restore();
+    // ✅ Postprocesado robusto
+    function processDetections(tensor, threshold = 0.5) {
+      const raw = tensor.data;
+      const numDetections = tensor.dims[1];
+      const results = [];
 
-      boxes.forEach(([x1, y1, x2, y2, score, classId]) => {
-        if (score < 0.5) return;
-        const label = classLabels?.[classId] ?? `class_${classId}`;
-        console.log("🎯 Detección:", { classId, label, score });
+      for (let i = 0; i < numDetections; i++) {
+        const offset = i * 6;
+        const x = raw[offset];
+        const y = raw[offset + 1];
+        const w = raw[offset + 2];
+        const h = raw[offset + 3];
+        const score = raw[offset + 4];
+        const classId = Math.floor(raw[offset + 5]);
 
+        if (score < threshold || classId < 0 || classId >= classLabels.length) continue;
+
+        results.push({
+          bbox: [x - w / 2, y - h / 2, w, h],
+          score: score,
+          classId: classId,
+          label: classLabels[classId]
+        });
+      }
+
+      return results.sort((a, b) => b.score - a.score).slice(0, 3);
+    }
+
+    // ✅ Dibujar detecciones
+    function drawDetections(detections) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      for (const det of detections) {
+        const [x, y, w, h] = det.bbox;
         ctx.strokeStyle = "red";
         ctx.lineWidth = 2;
-        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.strokeRect(x, y, w, h);
+        ctx.font = "16px sans-serif";
         ctx.fillStyle = "red";
-        ctx.font = "14px Arial";
-        ctx.fillText(`${label} ${(score * 100).toFixed(1)}%`, x1 + 2, y1 + 14);
-      });
+        ctx.fillText(`${det.label} ${(det.score * 100).toFixed(1)}%`, x, y > 10 ? y - 5 : 10);
+      }
     }
 
+    // ✅ Loop de detección
     async function detectLoop() {
-      if (!session) return;
-      const input = preprocess(video);
+      const input = preprocessFrame();
       const feeds = { images: input };
-      const output = await session.run(feeds);
-      const result = output[Object.keys(output)[0]].data;
-
-      const boxes = [];
-      for (let i = 0; i < result.length; i += 6) {
-        boxes.push(result.slice(i, i + 6));
-      }
-
-      drawBoxes(boxes);
+      const results = await session.run(feeds);
+      const output = Object.values(results)[0];
+      const detections = processDetections(output);
+      drawDetections(detections);
       requestAnimationFrame(detectLoop);
     }
 
-    // Inicialización
+    loadClassLabels();
     loadModel();
-    loadClassNames();
-    getCameras();
+    listCameras();
   </script>
 </body>
 </html>

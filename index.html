@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="ca">
 <head>
   <meta charset="UTF-8">
-  <title>Detector con alerta de proximidad</title>
+  <title>Detector amb alerta de proximitat</title>
   <style>
     body { text-align: center; font-family: sans-serif; }
     canvas { border: 2px solid #333; margin: 10px; }
@@ -11,16 +11,16 @@
   </style>
 </head>
 <body>
-  <h1>Alerta para objetos cercanos</h1>
+  <h1>Alerta per a objectes propers</h1>
   <canvas id="canvas" width="320" height="240"></canvas>
-  <p>Detectando...</p>
+  <p>Detectant...</p>
 
   <div class="controls">
-    <label for="umbral">Umbral de cercanía (área): <span id="valorUmbral">8000</span></label><br>
-    <input type="range" id="umbral" min="1000" max="40000" value="8000" step="100"><br><br>
+    <label for="umbral">Llindar de proximitat (àrea): <span id="valorUmbral">8000</span></label><br>
+    <input type="range" id="umbral" min="1000" max="80000" value="8000" step="100"><br><br>
 
-    <button onclick="toggleVoz()">🔊 Voz: <span id="estadoVoz">Activada</span></button>
-    <button onclick="toggleDibujo()">🟥 Dibujo: <span id="estadoDibujo">Activado</span></button>
+    <button onclick="toggleVoz()">🔊 Veu: <span id="estadoVoz">Activada</span></button>
+    <button onclick="toggleDibujo()">🟥 Dibuix: <span id="estadoDibujo">Activat</span></button>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0"></script>
@@ -41,27 +41,27 @@
     const estadoVoz = document.getElementById("estadoVoz");
     const estadoDibujo = document.getElementById("estadoDibujo");
 
-    let hablando = false;
-    let vozActiva = true;
-    let dibujarActiva = true;
+    let parlant = false;
+    let veuActiva = true;
+    let dibuixActiu = true;
 
     function toggleVoz() {
-      vozActiva = !vozActiva;
-      estadoVoz.textContent = vozActiva ? "Activada" : "Desactivada";
+      veuActiva = !veuActiva;
+      estadoVoz.textContent = veuActiva ? "Activada" : "Desactivada";
     }
 
     function toggleDibujo() {
-      dibujarActiva = !dibujarActiva;
-      estadoDibujo.textContent = dibujarActiva ? "Activado" : "Desactivado";
+      dibuixActiu = !dibuixActiu;
+      estadoDibujo.textContent = dibuixActiu ? "Activat" : "Desactivat";
     }
 
-    function speak(text) {
-      if (vozActiva && !hablando) {
-        hablando = true;
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = "es-ES";
-        utterance.onend = () => hablando = false;
-        speechSynthesis.speak(utterance);
+    function parla(text) {
+      if (veuActiva && !parlant) {
+        parlant = true;
+        const frase = new SpeechSynthesisUtterance(text);
+        frase.lang = "ca-ES";
+        frase.onend = () => parlant = false;
+        speechSynthesis.speak(frase);
       }
     }
 
@@ -79,14 +79,22 @@
       });
     }
 
-    function drawBoxes(predictions, umbral) {
-      const top3 = predictions.sort((a, b) => b.score - a.score).slice(0, 3);
+    function obtenirPosicio(x, w, ampleCanvas) {
+      const centreObjecte = x + w / 2;
+      if (centreObjecte < ampleCanvas / 3) return "a l'esquerra";
+      else if (centreObjecte > 2 * ampleCanvas / 3) return "a la dreta";
+      else return "al centre";
+    }
+
+    function dibuixarCaixes(prediccions, umbral) {
+      const top3 = prediccions.sort((a, b) => b.score - a.score).slice(0, 3);
 
       top3.forEach(pred => {
         const [x, y, w, h] = pred.bbox;
         const area = w * h;
+        const posicio = obtenirPosicio(x, w, canvas.width);
 
-        if (dibujarActiva) {
+        if (dibuixActiu) {
           ctx.strokeStyle = "red";
           ctx.lineWidth = 2;
           ctx.strokeRect(x, y, w, h);
@@ -96,28 +104,28 @@
         }
 
         if (area > umbral) {
-          speak(`¡Cuidado! ${pred.class} muy cerca`);
+          parla(`Compte! ${pred.class} molt a prop, ${posicio}`);
           vibrar();
         }
       });
     }
 
-    async function detectFrame(model) {
+    async function detectar(model) {
       const umbral = parseInt(umbralSlider.value);
       valorUmbralTexto.textContent = umbral;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const predictions = await model.detect(canvas);
-      drawBoxes(predictions, umbral);
-      requestAnimationFrame(() => detectFrame(model));
+      const prediccions = await model.detect(canvas);
+      dibuixarCaixes(prediccions, umbral);
+      requestAnimationFrame(() => detectar(model));
     }
 
     async function main() {
       await setupCamera();
       video.play();
       const model = await cocoSsd.load();
-      detectFrame(model);
+      detectar(model);
     }
 
     main();

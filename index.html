@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>YOLOv8 OpenImages</title>
+  <title>YOLOv8 OpenImages - Depuración</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <style>
@@ -13,7 +13,7 @@
   </style>
 </head>
 <body>
-  <h2>YOLOv8 OpenImages</h2>
+  <h2>YOLOv8 OpenImages (Depuración)</h2>
   <select id="cameraSelect"></select>
   <button onclick="startCamera()">Iniciar</button>
   <br>
@@ -42,6 +42,7 @@
       const response = await fetch('classes.txt');
       const text = await response.text();
       classLabels = text.split('\n').map(line => line.trim());
+      console.log("✅ Clases cargadas:", classLabels.length, classLabels.slice(0, 10));
     }
 
     async function getCameras() {
@@ -64,7 +65,6 @@
       });
       video.srcObject = stream;
       await video.play();
-
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       detectLoop();
@@ -95,7 +95,9 @@
 
       boxes.forEach(([x1, y1, x2, y2, score, classId]) => {
         if (score < 0.5) return;
-        const label = classLabels[classId] || `class_${classId}`;
+        const label = classLabels?.[classId] ?? `class_${classId}`;
+        console.log("🎯 Detección:", { classId, label, score });
+
         ctx.strokeStyle = "red";
         ctx.lineWidth = 2;
         ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
